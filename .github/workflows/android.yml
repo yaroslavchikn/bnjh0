@@ -1,0 +1,62 @@
+name: Build Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Android platform
+        run: flutter create --platforms=android --org com.jaroslav --project-name mediax .
+
+      - name: Add Android permissions
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+
+          if ! grep -q "READ_MEDIA_IMAGES" "$MANIFEST"; then
+            sed -i 's|<application|<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n    <application|' "$MANIFEST"
+          fi
+
+          if ! grep -q "requestLegacyExternalStorage" "$MANIFEST"; then
+            sed -i 's|<application|<application android:requestLegacyExternalStorage="true"|' "$MANIFEST"
+          fi
+
+      - name: Set Android minSdkVersion
+        run: |
+          GRADLE=android/app/build.gradle
+
+          if grep -q "minSdkVersion flutter.minSdkVersion" "$GRADLE"; then
+            sed -i 's|minSdkVersion flutter.minSdkVersion|minSdkVersion 21|' "$GRADLE"
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediax-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
